@@ -5,10 +5,13 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
+const path = require('path');
 
 // --- SETUP ---
 const app = express();
 const server = http.createServer(app);
+
+// This configuration is critical for Vercel
 const io = new Server(server, {
     cors: { origin: "*", methods: ["GET", "POST"] }
 });
@@ -16,10 +19,12 @@ const io = new Server(server, {
 // --- CONFIGURATION ---
 const MONGO_URI = "mongodb+srv://GlobalConnection:Balls123@ghostsgambling.41ahktw.mongodb.net/GhostsGambling?retryWrites=true&w=majority&appName=GhostsGambling";
 const JWT_SECRET = "9dkslfn2_DJ83sldf@!dkaP83";
+const PORT = process.env.PORT || 3000;
 
 // --- MIDDLEWARE ---
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public'))); // Serve frontend
 
 // --- DATABASE CONNECTION ---
 mongoose.connect(MONGO_URI)
@@ -76,7 +81,9 @@ app.post('/api/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         const user = await User.findOne({ username: username.toLowerCase() });
-        if (!user || !(await bcrypt.compare(password, user.password))) return res.status(401).json({ message: 'Invalid credentials' });
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json({ message: 'Invalid credentials' });
+        }
         const token = jwt.sign({ id: user._id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
         res.json({ token });
     } catch (error) { res.status(500).json({ message: "Server error during login." }); }
@@ -89,7 +96,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
 
 app.post('/api/profile/update', authenticateToken, async (req, res) => {
     await User.findByIdAndUpdate(req.user.id, { bio: req.body.bio, pfp: req.body.pfp });
-    res.json({ message: 'Profile updated' });
+    res.status(200).json({ message: 'Profile updated' });
 });
 
 app.get('/api/user/:username', async (req, res) => {
@@ -126,14 +133,11 @@ io.on('connection', (socket) => {
 async function broadcastOnlineUsers() { const onlineUsers = await User.find({ online: true }).select('username coins'); io.emit('online_users', onlineUsers); }
 setInterval(broadcastOnlineUsers, 5000);
 
-// For Vercel, we need to attach the express app to the server
-server.on('request', app);
-
-// Vercel will handle the listen command, but this is good for local dev
-const PORT = process.env.PORT || 3000;
+// --- SERVER LISTEN ---
+// This is for local development. Vercel will manage the server automatically.
 server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });
 
-// Export the server for Vercel
-module.exports = server;
+// Export the app for Vercel's serverless environment
+module.exports = app;
